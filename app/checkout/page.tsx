@@ -59,8 +59,13 @@ function CheckoutInner() {
   const tax = totalPrice * 0.06;
   const orderTotal = totalPrice + shippingFee + tax;
 
-  // Server-verified total returned by /api/create-payment-intent
-  const [verifiedTotal, setVerifiedTotal] = useState<number | null>(null);
+  // Server-verified total — read from sessionStorage first so it survives
+  // a 3DS redirect (page reloads fresh, React state is reset to null)
+  const [verifiedTotal, setVerifiedTotal] = useState<number | null>(() => {
+    if (typeof window === "undefined") return null;
+    const stored = sessionStorage.getItem("shatila-verified-total");
+    return stored ? parseFloat(stored) : null;
+  });
 
   const set = (field: keyof ShippingData, value: string) =>
     setShipping((s) => ({ ...s, [field]: value }));
@@ -69,6 +74,8 @@ function CheckoutInner() {
   useEffect(() => {
     const redirectStatus = searchParams.get("redirect_status");
     if (redirectStatus === "succeeded") {
+      console.log("[checkout] 3DS redirect success, verifiedTotal from sessionStorage:", sessionStorage.getItem("shatila-verified-total"));
+      sessionStorage.removeItem("shatila-verified-total");
       clearCart();
       setStep("success");
     }
@@ -98,6 +105,8 @@ function CheckoutInner() {
         return;
       }
 
+      console.log("[checkout] API response:", { total: data.total, subtotal: data.subtotal, shipping: data.shipping, tax: data.tax });
+      sessionStorage.setItem("shatila-verified-total", String(data.total));
       setClientSecret(data.clientSecret);
       setVerifiedTotal(data.total);
       setStep("payment");
@@ -109,6 +118,7 @@ function CheckoutInner() {
   };
 
   const handlePaymentSuccess = () => {
+    sessionStorage.removeItem("shatila-verified-total");
     clearCart();
     setStep("success");
   };
