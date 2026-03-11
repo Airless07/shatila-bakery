@@ -1,0 +1,71 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  --gold: #C9A84C;
+  --gold-light: #e8c97a;
+  --brown: #3D1F0F;
+  --cream: #FDF6EC;
+}
+
+html {
+  scroll-behavior: smooth;
+}
+
+body {
+  background-color: var(--cream);
+  color: var(--brown);
+}
+
+/* ── Custom scrollbar ────────────────────────────────────────────────── */
+::-webkit-scrollbar {
+  width: 6px;
+}
+::-webkit-scrollbar-track {
+  background: #f9f0e0;
+}
+::-webkit-scrollbar-thumb {
+  background: #C9A84C;
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #b08a30;
+}
+
+/* ── Utility classes ─────────────────────────────────────────────────── */
+@layer components {
+  .btn-gold {
+    @apply bg-[#C9A84C] hover:bg-[#b08a30] text-white font-semibold
+           px-6 py-3 rounded-full transition-all duration-200
+           shadow-md hover:shadow-lg active:scale-95 cursor-pointer;
+  }
+
+  .btn-outline-gold {
+    @apply border-2 border-[#C9A84C] text-[#C9A84C] hover:bg-[#C9A84C]
+           hover:text-white font-semibold px-6 py-3 rounded-full
+           transition-all duration-200 cursor-pointer;
+  }
+
+  .section-title {
+    @apply text-3xl md:text-4xl font-serif text-[#3D1F0F] text-center;
+  }
+
+  .section-divider {
+    @apply w-20 h-1 bg-[#C9A84C] mx-auto mt-3 mb-10 rounded-full;
+  }
+
+  .card {
+    @apply bg-white rounded-2xl shadow-md overflow-hidden
+           hover:shadow-xl transition-shadow duration-300;
+  }
+}
+
+/* ── Arabesque decorative divider ────────────────────────────────────── */
+.arabesque::before,
+.arabesque::after {
+  content: "❧";
+  color: #C9A84C;
+  margin: 0 0.75rem;
+  font-size: 1.25rem;
+}
