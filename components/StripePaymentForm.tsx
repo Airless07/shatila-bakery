@@ -23,47 +23,30 @@ export default function StripePaymentForm({ orderTotal, onSuccess, onBack }: Pro
     setIsProcessing(true);
     setErrorMessage(null);
 
-    // Submit the Elements form first (validates inputs)
-    const { error: submitError } = await elements.submit();
-    if (submitError) {
-      setErrorMessage(submitError.message ?? "An error occurred.");
+    try {
+      const { error } = await stripe.confirmPayment({
+        elements,
+        confirmParams: {
+          // Stripe redirects here if the payment method requires it (e.g. 3DS).
+          // The page reads redirect_status on load and shows the success screen.
+          return_url: `${window.location.origin}/checkout?redirect_status=succeeded`,
+        },
+        // For standard cards no redirect is needed — confirmPayment returns
+        // immediately with either a paymentIntent or an error object.
+        redirect: "if_required",
+      });
+
+      if (error) {
+        // Card declined, validation error, etc.
+        setErrorMessage(error.message ?? "Payment failed. Please try again.");
+        setIsProcessing(false);
+      } else {
+        // Confirmed without redirect → call the parent success handler
+        onSuccess();
+      }
+    } catch {
+      setErrorMessage("An unexpected error occurred. Please try again.");
       setIsProcessing(false);
-      return;
-    }
-
-    // Fetch a fresh PaymentIntent client secret
-    const res = await fetch("/api/create-payment-intent", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ amount: orderTotal }),
-    });
-
-    if (!res.ok) {
-      const { error } = await res.json();
-      setErrorMessage(error ?? "Could not initialise payment.");
-      setIsProcessing(false);
-      return;
-    }
-
-    const { clientSecret } = await res.json();
-
-    const { error } = await stripe.confirmPayment({
-      elements,
-      clientSecret,
-      confirmParams: {
-        // Stripe redirects here for methods that require a redirect (e.g. iDEAL).
-        // For test cards this is usually not triggered.
-        return_url: `${window.location.origin}/checkout?success=true`,
-      },
-      redirect: "if_required",
-    });
-
-    if (error) {
-      setErrorMessage(error.message ?? "Payment failed. Please try again.");
-      setIsProcessing(false);
-    } else {
-      // Payment confirmed without redirect — show success
-      onSuccess();
     }
   };
 
@@ -74,7 +57,6 @@ export default function StripePaymentForm({ orderTotal, onSuccess, onBack }: Pro
           <Lock size={18} className="text-[#C9A84C]" />
           Payment Details
         </h2>
-        {/* Card brand icons */}
         <div className="flex gap-1.5">
           {["VISA", "MC", "AMEX"].map((b) => (
             <span
@@ -92,16 +74,11 @@ export default function StripePaymentForm({ orderTotal, onSuccess, onBack }: Pro
         Secured by Stripe · 256-bit TLS encryption
       </p>
 
-      {/* Stripe PaymentElement renders card, Apple Pay, Google Pay, etc. */}
       <div className="mb-6">
         <PaymentElement
           options={{
             layout: "tabs",
-            fields: {
-              billingDetails: {
-                address: "never", // we already collect address in the shipping step
-              },
-            },
+            fields: { billingDetails: { address: "never" } },
           }}
         />
       </div>
