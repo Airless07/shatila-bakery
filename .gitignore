@@ -1,2 +1,7 @@
-node_modules 
-.next 
+node_modules
+.next
+
+# environment variables — never commit these
+.env
+.env.local
+.env*.local

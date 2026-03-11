@@ -2,14 +2,54 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { ArrowLeft, CheckCircle, Lock, CreditCard, Truck } from "lucide-react";
+import { ArrowLeft, CheckCircle, Truck, CreditCard, Lock } from "lucide-react";
+import { loadStripe } from "@stripe/stripe-js";
+import { Elements } from "@stripe/react-stripe-js";
 import { useCart } from "@/context/CartContext";
 import ProductImagePlaceholder from "@/components/ProductImagePlaceholder";
+import StripePaymentForm from "@/components/StripePaymentForm";
 
-type Step = "shipping" | "payment" | "review";
+// Initialise Stripe once outside the component (never re-created on re-renders)
+const stripePromise = loadStripe(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY!
+);
 
-interface FormData {
-  // Shipping
+// ── Stripe Elements appearance ────────────────────────────────────────────────
+const stripeAppearance = {
+  theme: "stripe" as const,
+  variables: {
+    colorPrimary: "#C9A84C",
+    colorBackground: "#fdf9f0",
+    colorText: "#3D1F0F",
+    colorDanger: "#ef4444",
+    fontFamily: "Georgia, serif",
+    borderRadius: "12px",
+  },
+  rules: {
+    ".Input": {
+      border: "1px solid rgba(201,168,76,0.4)",
+      boxShadow: "none",
+    },
+    ".Input:focus": {
+      border: "1px solid #C9A84C",
+      boxShadow: "0 0 0 3px rgba(201,168,76,0.15)",
+    },
+    ".Label": {
+      color: "#3D1F0F",
+      fontWeight: "600",
+      textTransform: "uppercase",
+      fontSize: "11px",
+      letterSpacing: "0.05em",
+    },
+    ".Tab": { border: "1px solid rgba(201,168,76,0.3)" },
+    ".Tab--selected": { borderColor: "#C9A84C", boxShadow: "none" },
+  },
+};
+
+// ── Types ─────────────────────────────────────────────────────────────────────
+type Step = "shipping" | "payment" | "success";
+
+interface ShippingData {
   firstName: string;
   lastName: string;
   email: string;
@@ -19,14 +59,9 @@ interface FormData {
   city: string;
   state: string;
   zip: string;
-  // Payment
-  cardName: string;
-  cardNumber: string;
-  expiry: string;
-  cvv: string;
 }
 
-const initialForm: FormData = {
+const initialShipping: ShippingData = {
   firstName: "",
   lastName: "",
   email: "",
@@ -36,81 +71,33 @@ const initialForm: FormData = {
   city: "",
   state: "MI",
   zip: "",
-  cardName: "",
-  cardNumber: "",
-  expiry: "",
-  cvv: "",
 };
 
-function formatCardNumber(val: string) {
-  return val
-    .replace(/\D/g, "")
-    .slice(0, 16)
-    .replace(/(.{4})/g, "$1 ")
-    .trim();
-}
-
-function formatExpiry(val: string) {
-  const digits = val.replace(/\D/g, "").slice(0, 4);
-  if (digits.length >= 3) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
-  return digits;
-}
-
+// ── Main component ────────────────────────────────────────────────────────────
 export default function CheckoutPage() {
   const { items, totalPrice, clearCart } = useCart();
   const [step, setStep] = useState<Step>("shipping");
-  const [form, setForm] = useState<FormData>(initialForm);
-  const [submitted, setSubmitted] = useState(false);
+  const [shipping, setShipping] = useState<ShippingData>(initialShipping);
 
-  const shipping = totalPrice >= 50 ? 0 : 5.99;
+  const shippingFee = totalPrice >= 50 ? 0 : 5.99;
   const tax = totalPrice * 0.06;
-  const orderTotal = totalPrice + shipping + tax;
+  const orderTotal = totalPrice + shippingFee + tax;
 
-  const set = (field: keyof FormData, value: string) =>
-    setForm((f) => ({ ...f, [field]: value }));
+  const set = (field: keyof ShippingData, value: string) =>
+    setShipping((s) => ({ ...s, [field]: value }));
 
-  const handlePlaceOrder = (e: React.FormEvent) => {
+  const handleShippingSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    clearCart();
-    setSubmitted(true);
+    setStep("payment");
   };
 
-  if (submitted) {
-    return (
-      <div className="min-h-screen bg-[#FDF6EC] flex items-center justify-center px-4 pt-20">
-        <div className="max-w-md w-full text-center bg-white rounded-3xl shadow-xl p-10">
-          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
-            <CheckCircle size={40} className="text-green-500" />
-          </div>
-          <h1 className="font-serif text-3xl font-bold text-[#3D1F0F] mb-3">
-            Order Placed!
-          </h1>
-          <p className="text-[#3D1F0F]/60 mb-2">
-            Thank you, {form.firstName}! Your order has been received.
-          </p>
-          <p className="text-[#3D1F0F]/40 text-sm mb-8">
-            A confirmation will be sent to <strong>{form.email}</strong>.
-            Your sweets are being prepared with love. 🍯
-          </p>
-          <div className="bg-[#FDF6EC] rounded-2xl p-4 text-sm text-left mb-8 space-y-1">
-            <p className="text-[#3D1F0F]/60">
-              <span className="font-semibold text-[#3D1F0F]">Order total:</span>{" "}
-              ${orderTotal.toFixed(2)}
-            </p>
-            <p className="text-[#3D1F0F]/60">
-              <span className="font-semibold text-[#3D1F0F]">Shipping to:</span>{" "}
-              {form.address}, {form.city}, {form.state} {form.zip}
-            </p>
-          </div>
-          <Link href="/" className="btn-gold w-full block text-center">
-            Back to Home
-          </Link>
-        </div>
-      </div>
-    );
-  }
+  const handlePaymentSuccess = () => {
+    clearCart();
+    setStep("success");
+  };
 
-  if (items.length === 0) {
+  // ── Empty cart ──────────────────────────────────────────────────────────────
+  if (items.length === 0 && step !== "success") {
     return (
       <div className="min-h-screen bg-[#FDF6EC] flex items-center justify-center px-4 pt-20">
         <div className="text-center">
@@ -125,18 +112,56 @@ export default function CheckoutPage() {
     );
   }
 
-  const steps: { key: Step; label: string; icon: React.ReactNode }[] = [
-    { key: "shipping", label: "Shipping", icon: <Truck size={16} /> },
-    { key: "payment", label: "Payment", icon: <CreditCard size={16} /> },
-    { key: "review", label: "Review", icon: <CheckCircle size={16} /> },
-  ];
+  // ── Success screen ──────────────────────────────────────────────────────────
+  if (step === "success") {
+    return (
+      <div className="min-h-screen bg-[#FDF6EC] flex items-center justify-center px-4 pt-20">
+        <div className="max-w-md w-full text-center bg-white rounded-3xl shadow-xl p-10">
+          <div className="w-20 h-20 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+            <CheckCircle size={40} className="text-green-500" />
+          </div>
+          <h1 className="font-serif text-3xl font-bold text-[#3D1F0F] mb-3">
+            Payment Confirmed!
+          </h1>
+          <p className="text-[#3D1F0F]/60 mb-2">
+            Thank you, {shipping.firstName}! Your order has been placed.
+          </p>
+          <p className="text-[#3D1F0F]/40 text-sm mb-8">
+            A confirmation will be sent to{" "}
+            <strong>{shipping.email}</strong>. Your sweets are being
+            prepared with love. 🍯
+          </p>
+          <div className="bg-[#FDF6EC] rounded-2xl p-4 text-sm text-left mb-8 space-y-1.5">
+            <p className="text-[#3D1F0F]/60">
+              <span className="font-semibold text-[#3D1F0F]">Order total:</span>{" "}
+              ${orderTotal.toFixed(2)}
+            </p>
+            <p className="text-[#3D1F0F]/60">
+              <span className="font-semibold text-[#3D1F0F]">Ship to:</span>{" "}
+              {shipping.address}
+              {shipping.apt ? `, ${shipping.apt}` : ""}, {shipping.city},{" "}
+              {shipping.state} {shipping.zip}
+            </p>
+          </div>
+          <Link href="/" className="btn-gold w-full block text-center">
+            Back to Home
+          </Link>
+        </div>
+      </div>
+    );
+  }
 
+  // ── Step indicator ──────────────────────────────────────────────────────────
+  const steps = [
+    { key: "shipping" as Step, label: "Shipping", icon: <Truck size={15} /> },
+    { key: "payment" as Step, label: "Payment", icon: <CreditCard size={15} /> },
+  ];
   const stepIndex = steps.findIndex((s) => s.key === step);
 
   return (
     <div className="min-h-screen bg-[#FDF6EC] pt-24 pb-16 px-4">
       <div className="max-w-6xl mx-auto">
-        {/* Back link */}
+        {/* Back */}
         <Link
           href="/cart"
           className="inline-flex items-center gap-2 text-[#C9A84C] hover:text-[#b08a30] text-sm font-semibold mb-6 transition-colors"
@@ -149,7 +174,7 @@ export default function CheckoutPage() {
         </h1>
 
         {/* Step indicator */}
-        <div className="flex items-center gap-0 mb-10">
+        <div className="flex items-center gap-0 mb-10 max-w-xs">
           {steps.map((s, i) => (
             <div key={s.key} className="flex items-center gap-0 flex-1">
               <button
@@ -187,21 +212,26 @@ export default function CheckoutPage() {
         </div>
 
         <div className="grid lg:grid-cols-3 gap-8">
-          {/* Form */}
+          {/* ── Left: active step ──────────────────────────────────────────── */}
           <div className="lg:col-span-2">
-            {/* Shipping Step */}
+
+            {/* Shipping step */}
             {step === "shipping" && (
-              <div className="bg-white rounded-2xl shadow-md p-6">
+              <form
+                onSubmit={handleShippingSubmit}
+                className="bg-white rounded-2xl shadow-md p-6"
+              >
                 <h2 className="font-serif text-xl font-bold text-[#3D1F0F] mb-6 flex items-center gap-2">
                   <Truck size={20} className="text-[#C9A84C]" />
                   Shipping Information
                 </h2>
+
                 <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                   <div>
                     <label className="label">First Name *</label>
                     <input
                       className="input"
-                      value={form.firstName}
+                      value={shipping.firstName}
                       onChange={(e) => set("firstName", e.target.value)}
                       required
                     />
@@ -210,7 +240,7 @@ export default function CheckoutPage() {
                     <label className="label">Last Name *</label>
                     <input
                       className="input"
-                      value={form.lastName}
+                      value={shipping.lastName}
                       onChange={(e) => set("lastName", e.target.value)}
                       required
                     />
@@ -220,7 +250,7 @@ export default function CheckoutPage() {
                     <input
                       className="input"
                       type="email"
-                      value={form.email}
+                      value={shipping.email}
                       onChange={(e) => set("email", e.target.value)}
                       required
                     />
@@ -230,7 +260,7 @@ export default function CheckoutPage() {
                     <input
                       className="input"
                       type="tel"
-                      value={form.phone}
+                      value={shipping.phone}
                       onChange={(e) => set("phone", e.target.value)}
                     />
                   </div>
@@ -238,7 +268,7 @@ export default function CheckoutPage() {
                     <label className="label">Street Address *</label>
                     <input
                       className="input"
-                      value={form.address}
+                      value={shipping.address}
                       onChange={(e) => set("address", e.target.value)}
                       required
                     />
@@ -247,7 +277,7 @@ export default function CheckoutPage() {
                     <label className="label">Apt / Suite</label>
                     <input
                       className="input"
-                      value={form.apt}
+                      value={shipping.apt}
                       onChange={(e) => set("apt", e.target.value)}
                     />
                   </div>
@@ -255,7 +285,7 @@ export default function CheckoutPage() {
                     <label className="label">City *</label>
                     <input
                       className="input"
-                      value={form.city}
+                      value={shipping.city}
                       onChange={(e) => set("city", e.target.value)}
                       required
                     />
@@ -264,7 +294,7 @@ export default function CheckoutPage() {
                     <label className="label">State</label>
                     <select
                       className="input"
-                      value={form.state}
+                      value={shipping.state}
                       onChange={(e) => set("state", e.target.value)}
                     >
                       {["MI", "OH", "IN", "IL", "WI", "MN", "IA", "MO"].map(
@@ -280,195 +310,47 @@ export default function CheckoutPage() {
                     <label className="label">ZIP Code *</label>
                     <input
                       className="input"
-                      value={form.zip}
+                      value={shipping.zip}
                       onChange={(e) =>
-                        set("zip", e.target.value.replace(/\D/g, "").slice(0, 5))
+                        set(
+                          "zip",
+                          e.target.value.replace(/\D/g, "").slice(0, 5)
+                        )
                       }
                       required
                     />
                   </div>
                 </div>
+
                 <div className="mt-6 flex justify-end">
-                  <button
-                    onClick={() => {
-                      if (
-                        form.firstName &&
-                        form.lastName &&
-                        form.email &&
-                        form.address &&
-                        form.city &&
-                        form.zip
-                      ) {
-                        setStep("payment");
-                      }
-                    }}
-                    className="btn-gold"
-                  >
+                  <button type="submit" className="btn-gold">
                     Continue to Payment →
                   </button>
                 </div>
-              </div>
-            )}
-
-            {/* Payment Step */}
-            {step === "payment" && (
-              <div className="bg-white rounded-2xl shadow-md p-6">
-                <h2 className="font-serif text-xl font-bold text-[#3D1F0F] mb-2 flex items-center gap-2">
-                  <CreditCard size={20} className="text-[#C9A84C]" />
-                  Payment Details
-                </h2>
-                <p className="text-xs text-[#3D1F0F]/40 mb-6 flex items-center gap-1">
-                  <Lock size={12} className="text-green-500" /> Your payment
-                  information is encrypted and secure.
-                </p>
-
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-                  <div className="sm:col-span-2">
-                    <label className="label">Name on Card *</label>
-                    <input
-                      className="input"
-                      value={form.cardName}
-                      onChange={(e) => set("cardName", e.target.value)}
-                      placeholder="Jane Smith"
-                      required
-                    />
-                  </div>
-                  <div className="sm:col-span-2">
-                    <label className="label">Card Number *</label>
-                    <input
-                      className="input font-mono tracking-widest"
-                      value={form.cardNumber}
-                      onChange={(e) =>
-                        set("cardNumber", formatCardNumber(e.target.value))
-                      }
-                      placeholder="1234 5678 9012 3456"
-                      maxLength={19}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="label">Expiry *</label>
-                    <input
-                      className="input font-mono"
-                      value={form.expiry}
-                      onChange={(e) =>
-                        set("expiry", formatExpiry(e.target.value))
-                      }
-                      placeholder="MM/YY"
-                      maxLength={5}
-                      required
-                    />
-                  </div>
-                  <div>
-                    <label className="label">CVV *</label>
-                    <input
-                      className="input font-mono"
-                      value={form.cvv}
-                      onChange={(e) =>
-                        set("cvv", e.target.value.replace(/\D/g, "").slice(0, 4))
-                      }
-                      placeholder="•••"
-                      maxLength={4}
-                      required
-                    />
-                  </div>
-                </div>
-
-                <div className="mt-6 flex justify-between">
-                  <button
-                    onClick={() => setStep("shipping")}
-                    className="btn-outline-gold"
-                  >
-                    ← Back
-                  </button>
-                  <button
-                    onClick={() => {
-                      if (
-                        form.cardName &&
-                        form.cardNumber.length >= 19 &&
-                        form.expiry.length === 5 &&
-                        form.cvv.length >= 3
-                      ) {
-                        setStep("review");
-                      }
-                    }}
-                    className="btn-gold"
-                  >
-                    Review Order →
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Review Step */}
-            {step === "review" && (
-              <form onSubmit={handlePlaceOrder}>
-                <div className="bg-white rounded-2xl shadow-md p-6 space-y-6">
-                  <h2 className="font-serif text-xl font-bold text-[#3D1F0F]">
-                    Review Your Order
-                  </h2>
-
-                  {/* Shipping summary */}
-                  <div className="bg-[#FDF6EC] rounded-xl p-4 text-sm">
-                    <div className="flex justify-between items-center mb-2">
-                      <p className="font-semibold text-[#3D1F0F]">
-                        Ship to
-                      </p>
-                      <button
-                        type="button"
-                        onClick={() => setStep("shipping")}
-                        className="text-[#C9A84C] text-xs hover:underline"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                    <p className="text-[#3D1F0F]/70">
-                      {form.firstName} {form.lastName}
-                    </p>
-                    <p className="text-[#3D1F0F]/70">
-                      {form.address}
-                      {form.apt ? `, ${form.apt}` : ""}, {form.city},{" "}
-                      {form.state} {form.zip}
-                    </p>
-                    <p className="text-[#3D1F0F]/70">{form.email}</p>
-                  </div>
-
-                  {/* Payment summary */}
-                  <div className="bg-[#FDF6EC] rounded-xl p-4 text-sm">
-                    <div className="flex justify-between items-center mb-2">
-                      <p className="font-semibold text-[#3D1F0F]">Payment</p>
-                      <button
-                        type="button"
-                        onClick={() => setStep("payment")}
-                        className="text-[#C9A84C] text-xs hover:underline"
-                      >
-                        Edit
-                      </button>
-                    </div>
-                    <p className="text-[#3D1F0F]/70 font-mono">
-                      •••• •••• •••• {form.cardNumber.slice(-4)}
-                    </p>
-                    <p className="text-[#3D1F0F]/70">{form.cardName}</p>
-                  </div>
-
-                  <div className="flex justify-between">
-                    <button
-                      type="button"
-                      onClick={() => setStep("payment")}
-                      className="btn-outline-gold"
-                    >
-                      ← Back
-                    </button>
-                    <button type="submit" className="btn-gold flex items-center gap-2">
-                      <Lock size={16} /> Place Order — ${orderTotal.toFixed(2)}
-                    </button>
-                  </div>
-                </div>
               </form>
+            )}
+
+            {/* Payment step — wrapped in Stripe Elements */}
+            {step === "payment" && (
+              <Elements
+                stripe={stripePromise}
+                options={{
+                  mode: "payment",
+                  amount: Math.round(orderTotal * 100),
+                  currency: "usd",
+                  appearance: stripeAppearance,
+                }}
+              >
+                <StripePaymentForm
+                  orderTotal={orderTotal}
+                  onSuccess={handlePaymentSuccess}
+                  onBack={() => setStep("shipping")}
+                />
+              </Elements>
             )}
           </div>
 
-          {/* Order summary sidebar */}
+          {/* ── Right: order summary ──────────────────────────────────────── */}
           <div className="lg:col-span-1">
             <div className="bg-white rounded-2xl shadow-md p-5 sticky top-24">
               <h3 className="font-serif text-lg font-bold text-[#3D1F0F] mb-4">
@@ -508,8 +390,12 @@ export default function CheckoutPage() {
                 </div>
                 <div className="flex justify-between text-[#3D1F0F]/60">
                   <span>Shipping</span>
-                  <span className={shipping === 0 ? "text-green-600 font-semibold" : ""}>
-                    {shipping === 0 ? "FREE" : `$${shipping.toFixed(2)}`}
+                  <span
+                    className={
+                      shippingFee === 0 ? "text-green-600 font-semibold" : ""
+                    }
+                  >
+                    {shippingFee === 0 ? "FREE" : `$${shippingFee.toFixed(2)}`}
                   </span>
                 </div>
                 <div className="flex justify-between text-[#3D1F0F]/60">
@@ -521,18 +407,24 @@ export default function CheckoutPage() {
                   <span>${orderTotal.toFixed(2)}</span>
                 </div>
               </div>
+
+              {/* Security badge */}
+              <div className="mt-4 flex items-center justify-center gap-1.5 text-[#3D1F0F]/30 text-xs">
+                <Lock size={11} />
+                Secured by Stripe
+              </div>
             </div>
           </div>
         </div>
       </div>
 
-      {/* Input styles scoped to this page */}
+      {/* Input styles */}
       <style jsx global>{`
         .label {
           display: block;
           font-size: 0.75rem;
           font-weight: 600;
-          color: #3D1F0F;
+          color: #3d1f0f;
           opacity: 0.6;
           text-transform: uppercase;
           letter-spacing: 0.05em;
@@ -541,17 +433,17 @@ export default function CheckoutPage() {
         .input {
           width: 100%;
           padding: 0.625rem 0.875rem;
-          border: 1px solid rgba(201,168,76,0.4);
+          border: 1px solid rgba(201, 168, 76, 0.4);
           border-radius: 0.75rem;
           background: #fdf9f0;
-          color: #3D1F0F;
+          color: #3d1f0f;
           font-size: 0.875rem;
           transition: all 0.15s;
           outline: none;
         }
         .input:focus {
-          border-color: #C9A84C;
-          box-shadow: 0 0 0 3px rgba(201,168,76,0.15);
+          border-color: #c9a84c;
+          box-shadow: 0 0 0 3px rgba(201, 168, 76, 0.15);
           background: #fff;
         }
       `}</style>
