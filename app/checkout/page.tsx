@@ -54,9 +54,13 @@ function CheckoutInner() {
   const [piError, setPiError] = useState<string | null>(null);
   const [creatingPI, setCreatingPI] = useState(false);
 
+  // Local display values (used in the sidebar before the PI is created)
   const shippingFee = totalPrice >= 50 ? 0 : 5.99;
   const tax = totalPrice * 0.06;
   const orderTotal = totalPrice + shippingFee + tax;
+
+  // Server-verified total returned by /api/create-payment-intent
+  const [verifiedTotal, setVerifiedTotal] = useState<number | null>(null);
 
   const set = (field: keyof ShippingData, value: string) =>
     setShipping((s) => ({ ...s, [field]: value }));
@@ -81,7 +85,9 @@ function CheckoutInner() {
       const res = await fetch("/api/create-payment-intent", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ amount: orderTotal }),
+        body: JSON.stringify({
+          items: items.map((i) => ({ id: i.id, quantity: i.quantity })),
+        }),
       });
 
       const data = await res.json();
@@ -93,6 +99,7 @@ function CheckoutInner() {
       }
 
       setClientSecret(data.clientSecret);
+      setVerifiedTotal(data.total);
       setStep("payment");
     } catch {
       setPiError("Network error. Please check your connection and try again.");
@@ -293,7 +300,7 @@ function CheckoutInner() {
                 options={{ clientSecret, appearance: stripeAppearance }}
               >
                 <StripePaymentForm
-                  orderTotal={orderTotal}
+                  orderTotal={verifiedTotal ?? orderTotal}
                   onSuccess={handlePaymentSuccess}
                   onBack={() => setStep("shipping")}
                 />
