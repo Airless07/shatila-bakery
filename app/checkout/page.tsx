@@ -158,7 +158,7 @@ function CheckoutInner() {
             <div className="bg-[#FDF6EC] rounded-2xl p-4 text-sm text-left mb-8 space-y-1.5">
               <p className="text-[#3D1F0F]/60">
                 <span className="font-semibold text-[#3D1F0F]">Order total:</span>{" "}
-                ${orderTotal.toFixed(2)}
+                ${(verifiedTotal ?? orderTotal).toFixed(2)}
               </p>
               <p className="text-[#3D1F0F]/60">
                 <span className="font-semibold text-[#3D1F0F]">Ship to:</span>{" "}
