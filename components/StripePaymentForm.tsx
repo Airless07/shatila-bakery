@@ -27,25 +27,23 @@ export default function StripePaymentForm({ orderTotal, onSuccess, onBack }: Pro
       const { error } = await stripe.confirmPayment({
         elements,
         confirmParams: {
-          // Stripe redirects here if the payment method requires it (e.g. 3DS).
-          // The page reads redirect_status on load and shows the success screen.
           return_url: `${window.location.origin}/checkout?redirect_status=succeeded`,
         },
-        // For standard cards no redirect is needed — confirmPayment returns
-        // immediately with either a paymentIntent or an error object.
         redirect: "if_required",
       });
 
       if (error) {
-        // Card declined, validation error, etc.
+        console.error("[StripePaymentForm] confirmPayment error:", error);
         setErrorMessage(error.message ?? "Payment failed. Please try again.");
         setIsProcessing(false);
       } else {
-        // Confirmed without redirect → call the parent success handler
         onSuccess();
       }
-    } catch {
-      setErrorMessage("An unexpected error occurred. Please try again.");
+    } catch (err) {
+      // Log the real exception so it appears in browser devtools / Vercel logs
+      console.error("[StripePaymentForm] Unexpected exception:", err);
+      const message = err instanceof Error ? err.message : String(err);
+      setErrorMessage(message || "An unexpected error occurred. Please try again.");
       setIsProcessing(false);
     }
   };
@@ -75,12 +73,7 @@ export default function StripePaymentForm({ orderTotal, onSuccess, onBack }: Pro
       </p>
 
       <div className="mb-6">
-        <PaymentElement
-          options={{
-            layout: "tabs",
-            fields: { billingDetails: { address: "never" } },
-          }}
-        />
+        <PaymentElement options={{ layout: "tabs" }} />
       </div>
 
       {errorMessage && (
